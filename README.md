@@ -16,7 +16,6 @@ Screen capture the desktop or a specified window
 ##Syntax
 
 ```
-image:=Capture desktop
 image:=Capture screen
 image:=Capture window(window)
 ```
