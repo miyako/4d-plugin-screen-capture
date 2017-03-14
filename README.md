@@ -16,10 +16,12 @@ Screen capture the desktop or a specified window
 ##Syntax
 
 ```
-image:=Capture window
 image:=Capture desktop
+image:=Capture screen
+image:=Capture window(window)
 ```
 
 Parameter|Type|Description
 ------------|------------|----
-image|PICTURE|screen capture
+image|PICTURE|Captured image
+window|INT32|Window reference
