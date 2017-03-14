@@ -1,0 +1,1 @@
+﻿{"name":"screen-capture","id":20000,"commands":[{"theme":"Capture","syntax":"Capture screen:P"},{"theme":"Capture","syntax":"Capture window(&L):P"}]}
