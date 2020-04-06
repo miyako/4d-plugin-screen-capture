@@ -19,4 +19,4 @@ image:=Capture window (window)
 Parameter|Type|Description
 ------------|------------|----
 image|PICTURE|Captured image
-window|INT32|Window reference
+window|LONGINT|Window reference
