@@ -3,6 +3,8 @@
 
 Screen capture the desktop or a specified window
 
+**Important**: versions prior to ``2.1.0`` have serious memory leak on Mac, because of [``TIFFRepresentation``](https://developer.apple.com/documentation/appkit/nsimage/1519841-tiffrepresentation?language=objc).
+
 ### Platform
 
 | carbon | cocoa | win32 | win64 |
