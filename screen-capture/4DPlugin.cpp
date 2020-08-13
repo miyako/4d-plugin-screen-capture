@@ -14,35 +14,25 @@
 
 void PluginMain(PA_long32 selector, PA_PluginParameters params)
 {
-	try
-	{
-		PA_long32 pProcNum = selector;
-		sLONG_PTR *pResult = (sLONG_PTR *)params->fResult;
-		PackagePtr pParams = (PackagePtr)params->fParameters;
+    try
+    {
+        switch(selector)
+        {
+            case 1 :
+                Capture_screen(params);
+                break;
+            case 2 :
+                Capture_window(params);
+                break;
 
-		CommandDispatcher(pProcNum, pResult, pParams); 
-	}
-	catch(...)
-	{
+        }
 
-	}
-}
+    }
+    catch(...)
+    {
 
-void CommandDispatcher (PA_long32 pProcNum, sLONG_PTR *pResult, PackagePtr pParams)
-{
-	switch(pProcNum)
-	{
-// --- Capture
+    }
 
-		case 1 :
-			Capture_screen(pResult, pParams);
-			break;
-
-		case 2 :
-			Capture_window(pResult, pParams);
-			break;
-
-	}
 }
 
 // ------------------------------------ Capture -----------------------------------
@@ -63,17 +53,17 @@ NSWindow *PA_GetWindowRef64(int winId)
 	}
 	return 0;
 }
-CGWindowID getWindowId(C_LONGINT &Param1)
+CGWindowID getWindowId(PA_long32 arg)
 {
 #if CGFLOAT_IS_DOUBLE
-	NSWindow *window = PA_GetWindowRef64(Param1.getIntValue());
+	NSWindow *window = PA_GetWindowRef64(arg);
 	return window ? [window windowNumber] : kCGNullWindowID;
 #else
-	return HIWindowGetCGWindowID(reinterpret_cast<WindowRef>(PA_GetWindowPtr(reinterpret_cast<PA_WindowRef>(Param1.getIntValue()))));
+	return HIWindowGetCGWindowID(reinterpret_cast<WindowRef>(PA_GetWindowPtr(reinterpret_cast<PA_WindowRef>(arg))));
 #endif
 }
 
-void getWindowImage(CGWindowID windowId, CGWindowListOption option, C_PICTURE &returnValue)
+void getWindowImage(CGWindowID windowId, CGWindowListOption option, PA_PluginParameters params)
 {
 	CGImageRef image = CGWindowListCreateImage(CGRectNull,
 																						 option,
@@ -81,14 +71,24 @@ void getWindowImage(CGWindowID windowId, CGWindowListOption option, C_PICTURE &r
 																						 kCGWindowImageBoundsIgnoreFraming);
 	if(image)
 	{
-		NSImage * img = [[NSImage alloc]initWithCGImage:image size:NSZeroSize];
-		returnValue.setImage(img);
-		[img release];
+        CFMutableDataRef data = CFDataCreateMutable(kCFAllocatorDefault, 0);
+        CGImageDestinationRef destination = CGImageDestinationCreateWithData(data, kUTTypeTIFF, 1, NULL);
+        CFMutableDictionaryRef properties = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, NULL, NULL);
+        CGImageDestinationAddImage(destination, image, properties);
+        CGImageDestinationFinalize(destination);
+
+        PA_Picture p = PA_CreatePicture((void *)CFDataGetBytePtr(data), CFDataGetLength(data));
+        PA_ReturnPicture(params, p);
+
+        CFRelease(destination);
+        CFRelease(properties);
+        CFRelease(data);
+
 		CGImageRelease(image);
 	}
 }
 #else
-void captureWindow(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, C_PICTURE &picture)
+void captureWindow(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, PA_PluginParameters params)
 {
 	if(hbmWindow)
 	{
@@ -145,8 +145,9 @@ void captureWindow(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, C_PICTURE &pi
 				//copy the bits
 				memcpy(&buf[0] + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER), &bits[0], lpbi->biSizeImage);
 				
-				picture.setPicture(PA_CreatePicture(&buf[0], bfSize));
-				
+                PA_Picture p = PA_CreatePicture((void *)&buf[0], bfSize);
+                PA_ReturnPicture(params, p);
+                
 				GlobalUnlock(hDIB);
 			}//GlobalLock
 			GlobalFree(hDIB);
@@ -155,7 +156,7 @@ void captureWindow(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, C_PICTURE &pi
 	}//hbmWindow
 	
 }
-void getWindowImage(HWND windowRef, C_PICTURE &returnValue)
+void getWindowImage(HWND windowRef, PA_PluginParameters params)
 {
 	if(windowRef)
 	{
@@ -195,35 +196,27 @@ void getWindowImage(HWND windowRef, C_PICTURE &returnValue)
 }
 #endif
 
-void Capture_screen(sLONG_PTR *pResult, PackagePtr pParams)
-{
-	C_PICTURE returnValue;
-	
+void Capture_screen(PA_PluginParameters params) {
+    
 #if VERSIONMAC
-	getWindowImage(kCGNullWindowID, kCGWindowListOptionOnScreenOnly, returnValue);
+	getWindowImage(kCGNullWindowID, kCGWindowListOptionOnScreenOnly, params);
 #else
-	getWindowImage(GetDesktopWindow(), returnValue);
+	getWindowImage(GetDesktopWindow(), params);
 #endif
-	
-	returnValue.setReturn(pResult);
+
 }
 
-void Capture_window(sLONG_PTR *pResult, PackagePtr pParams)
+void Capture_window(PA_PluginParameters params)
 {
-	C_LONGINT Param1;
-	C_PICTURE returnValue;
-	
-	Param1.fromParamAtIndex(pParams, 1);
+    PA_long32 arg1 = PA_GetLongParameter(params, 1);
 	
 #if VERSIONMAC
-	CGWindowID winId = getWindowId(Param1);
+	CGWindowID winId = getWindowId(arg1);
 	if(winId != kCGNullWindowID)
-		getWindowImage(winId, kCGWindowListOptionIncludingWindow, returnValue);
+		getWindowImage(winId, kCGWindowListOptionIncludingWindow, params);
 #else
-	HWND windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(Param1.getIntValue())));
-	getWindowImage(windowRef, returnValue);
+	HWND windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
+	getWindowImage(windowRef, params);
 #endif
-	
-	returnValue.setReturn(pResult);
-}
 
+}

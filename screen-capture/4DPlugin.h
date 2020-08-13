@@ -11,5 +11,5 @@
 
 
 // --- Capture
-void Capture_screen(sLONG_PTR *pResult, PackagePtr pParams);
-void Capture_window(sLONG_PTR *pResult, PackagePtr pParams);
+void Capture_screen(PA_PluginParameters params);
+void Capture_window(PA_PluginParameters params);
