@@ -6,7 +6,11 @@
 4d-plugin-screen-capture
 ========================
 
-Screen capture the desktop or a specified window
+Screen capture the desktop or a specified window.
+
+#### Windows
+
+The web area is using hardware acceleration, a performance multiplier for rendering. It is not possible to sample pixels using the class `BitBlt` API. `BitBlt` will return a black region where the GPU projects its output. It is necessary to capture the GPU representation of the window and locally convert it to bitmap.
 
 On Windows, it is not possible to capture a child window of the MDI using this command. The entire MDI is captured instead.
 
@@ -18,7 +22,7 @@ On Windows, you must install **Graphic Tools** in
 
 * Apps > Optional features > Add an optional feature
 
-This is needed for [D3D11CreateDevice](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdevice) with `D3D11_CREATE_DEVICE_DEBUG`
+in order to call [D3D11CreateDevice](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdevice) with the  `D3D11_CREATE_DEVICE_DEBUG` flag. This is not mandatory for using the plugin.
 
 ## Syntax
 
