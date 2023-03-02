@@ -14,6 +14,8 @@ On Windows, you must install **Graphic Tools** in
 
 * Apps > Optional features > Add an optional feature
 
+This is needed for [D3D11CreateDevice](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdevice)
+
 ## Syntax
 
 ```4d
