@@ -8,7 +8,11 @@
 
 Screen capture the desktop or a specified window
 
-**Important**: versions prior to ``2.1.0`` have serious memory leak on Mac, because of [``TIFFRepresentation``](https://developer.apple.com/documentation/appkit/nsimage/1519841-tiffrepresentation?language=objc).
+#### System Requirements
+
+On Windows, you must install **Graphic Tools** in 
+
+* Apps > Optional features > Add an optional feature
 
 ## Syntax
 
