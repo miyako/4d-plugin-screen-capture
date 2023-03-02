@@ -43,4 +43,4 @@ Parameter|Type|Description
 ------------|------------|----
 image|PICTURE|Captured image
 window|LONGINT|Window reference
-monitor|LONGINT|Monitor reference (Windows only)
+monitor|LONGINT|Monitor index (Windows only)
