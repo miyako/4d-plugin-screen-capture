@@ -8,6 +8,10 @@
 
 Screen capture the desktop or a specified window
 
+On Windows, it is not possible to capture a child window of the MDI using this command. The entire MDI is captured instead.
+
+You can only specify a window reference in **SDI mode**. 
+
 #### Note to self
 
 On Windows, you must install **Graphic Tools** in 
