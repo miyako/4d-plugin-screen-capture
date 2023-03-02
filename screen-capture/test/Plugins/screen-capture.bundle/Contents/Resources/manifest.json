@@ -2,11 +2,11 @@
     "name": "screen-capture",
     "id": 20000,
     "commands": [
-        {
-            "theme": "Capture",
-            "syntax": "Capture screen:P",
-            "threadSafe": true
-        },
+      {
+        "theme": "Capture",
+        "syntax": "Capture screen(&L):P",
+        "threadSafe": true
+      },
         {
             "theme": "Capture",
             "syntax": "Capture window(&L):P",

@@ -16,13 +16,38 @@
 #if VERSIONMAC
 #import <Cocoa/Cocoa.h>
 #else
-#include <windows.h>
 #include <vector>
+#include <functional>
+
+#include "include/stb_image_write.h"
+
+#include <dxgi.h>
+#include <d3d11.h>
+#include <d3d11_4.h>
+
+#include <inspectable.h>
+#include <winrt/base.h>
+
+#include <winrt/windows.Foundation.h>
+#include <winrt/windows.System.h>
+#include <winrt/windows.Graphics.h>
+#include <winrt/windows.Graphics.Capture.h>
+#include <winrt/windows.Graphics.DirectX.h>
+#include <winrt/windows.Graphics.DirectX.Direct3d11.h>
+
+#include <windows.Graphics.DirectX.Direct3d11.interop.h>
+#include <windows.Graphics.Capture.Interop.h>
+#include <windows.Foundation.h>
+#include <windows.h>
 #endif
 
 #pragma mark -
 
-void Capture_screen(PA_PluginParameters params);
-void Capture_window(PA_PluginParameters params);
+static void Capture_screen(PA_PluginParameters params);
+static void Capture_window(PA_PluginParameters params);
+
+#if VERSIONWIN
+static void getWindowImage(HANDLE target, PA_PluginParameters params, bool isWindow = false);
+#endif
 
 #endif /* PLUGIN_SCREEN_CAPTURE_H */

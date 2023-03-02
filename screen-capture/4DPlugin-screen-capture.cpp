@@ -20,6 +20,16 @@ void PluginMain(PA_long32 selector, PA_PluginParameters params) {
         {
 			// --- screen-capture
             
+        case kInitPlugin:
+        case kServerInitPlugin:
+
+            break;
+
+        case kDeinitPlugin:
+        case kServerDeinitPlugin:
+
+            break;
+
 			case 1 :
 				Capture_screen(params);
 				break;
@@ -54,11 +64,12 @@ NSWindow *PA_GetWindowRef64(int winId)
     }
     return 0;
 }
+
 CGWindowID getWindowId(PA_long32 arg)
 {
 #if CGFLOAT_IS_DOUBLE
     NSWindow *window = PA_GetWindowRef64(arg);
-    return window ? [window windowNumber] : kCGNullWindowID;
+    return window ? (CGWindowID)[window windowNumber] : kCGNullWindowID;
 #else
     return HIWindowGetCGWindowID(reinterpret_cast<WindowRef>(PA_GetWindowPtr(reinterpret_cast<PA_WindowRef>(arg))));
 #endif
@@ -67,9 +78,9 @@ CGWindowID getWindowId(PA_long32 arg)
 void getWindowImage(CGWindowID windowId, CGWindowListOption option, PA_PluginParameters params)
 {
     CGImageRef image = CGWindowListCreateImage(CGRectNull,
-                                                                                         option,
-                                                                                         windowId,
-                                                                                         kCGWindowImageBoundsIgnoreFraming);
+                                               option,
+                                               windowId,
+                                               kCGWindowImageBoundsIgnoreFraming);
     if(image)
     {
         CFMutableDataRef data = CFDataCreateMutable(kCFAllocatorDefault, 0);
@@ -77,8 +88,8 @@ void getWindowImage(CGWindowID windowId, CGWindowListOption option, PA_PluginPar
         CFMutableDictionaryRef properties = CFDictionaryCreateMutable(kCFAllocatorDefault, 0, NULL, NULL);
         CGImageDestinationAddImage(destination, image, properties);
         CGImageDestinationFinalize(destination);
-
-        PA_Picture p = PA_CreatePicture((void *)CFDataGetBytePtr(data), CFDataGetLength(data));
+        
+        PA_Picture p = PA_CreatePicture((void *)CFDataGetBytePtr(data), (PA_long32)CFDataGetLength(data));
         PA_ReturnPicture(params, p);
 
         CFRelease(destination);
@@ -88,136 +99,353 @@ void getWindowImage(CGWindowID windowId, CGWindowListOption option, PA_PluginPar
         CGImageRelease(image);
     }
 }
-#else
-void captureWindow(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, PA_PluginParameters params)
+#endif
+
+#if VERSIONWIN
+struct monitor_info_t
 {
-    if(hbmWindow)
-    {
-        BITMAPINFO bmpInfo;
-        ZeroMemory(&bmpInfo,sizeof(BITMAPINFO));
-        bmpInfo.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
-        GetDIBits(hdcWindow, hbmWindow, 0, 0, NULL, &bmpInfo, DIB_RGB_COLORS);
-        
-        BITMAPINFOHEADER bi;
-        bi.biSize = sizeof(BITMAPINFOHEADER);
-        bi.biWidth = w;
-        bi.biHeight = h;
-        bi.biPlanes = 1;
-        bi.biBitCount = 32;
-        bi.biCompression = BI_RGB;
-        bi.biSizeImage = 0;
-        bi.biXPelsPerMeter = 0;
-        bi.biYPelsPerMeter = 0;
-        bi.biClrUsed = 0;
-        bi.biClrImportant = 0;
-        
-        bi.biSizeImage = bmpInfo.bmiHeader.biSizeImage;
-        
-        HANDLE hDIB = GlobalAlloc(GHND,bi.biSizeImage+sizeof(BITMAPINFOHEADER));
-        
-        if(hDIB)
-        {
-            LPBITMAPINFOHEADER lpbi = (LPBITMAPINFOHEADER)GlobalLock(hDIB);
-            
-            if(lpbi)
-            {
-                
-                *lpbi = bi;
-                
-                std::vector<char> bits(bi.biSizeImage);
-                GetDIBits(hdcWindow, hbmWindow, 0, bi.biHeight, &bits[0], (LPBITMAPINFO)lpbi, DIB_RGB_COLORS);
-                
-                size_t bfSize            = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + bi.biSizeImage;
-                
-                BITMAPFILEHEADER        bmfHeader;
-                
-                bmfHeader.bfType        = 0x4D42; //BM
-                bmfHeader.bfSize        = bfSize;
-                bmfHeader.bfReserved1    = 0;
-                bmfHeader.bfReserved2    = 0;
-                bmfHeader.bfOffBits        = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
-                
-                std::vector<char> buf(bfSize);
-                
-                //copy the file header
-                memcpy(&buf[0], &bmfHeader, sizeof(BITMAPFILEHEADER));
-                //copy the info header and bits
-                memcpy(&buf[0] + sizeof(BITMAPFILEHEADER), lpbi, sizeof(BITMAPINFOHEADER));
-                //copy the bits
-                memcpy(&buf[0] + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER), &bits[0], lpbi->biSizeImage);
-                
-                PA_Picture p = PA_CreatePicture((void *)&buf[0], bfSize);
-                PA_ReturnPicture(params, p);
-                
-                GlobalUnlock(hDIB);
-            }//GlobalLock
-            GlobalFree(hDIB);
-        }//GlobalAlloc
-        
-    }//hbmWindow
-    
-}
-void getWindowImage(HWND windowRef, PA_PluginParameters params)
-{
-    if(windowRef)
-    {
-        RECT rect;
-        GetWindowRect(windowRef, &rect);
-        int w = rect.right - rect.left;
-        int h = rect.bottom - rect.top;
-        
-        HDC        hdcWindow, hdcMemDC;
-        HBITMAP    hbmWindow;
-        hdcWindow    = GetWindowDC(windowRef);
-        if(hdcWindow)
-        {
-            hdcMemDC    = CreateCompatibleDC(hdcWindow);
-            if(hdcMemDC)
-            {
-                hbmWindow = CreateCompatibleBitmap(hdcWindow, w, h);
-                
-                if(hbmWindow)
-                {
-                    HGDIOBJ oldObject = SelectObject(hdcMemDC, hbmWindow);
-                    PrintWindow(windowRef, hdcMemDC, 0);
-                    BitBlt(hdcMemDC, 0, 0, w, h, hdcWindow, 0, 0, SRCCOPY);
-                    
-                    captureWindow(hbmWindow, hdcWindow, w, h, params);
-                    
-                    SelectObject(hdcMemDC, oldObject);
-                    DeleteObject(hbmWindow);
-                }//CreateCompatibleBitmap
-                DeleteDC(hdcMemDC);
-            }//CreateCompatibleDC
-            DeleteDC(hdcWindow);
-        }//CreateDC
-        
-    }//windowRef
-    
+    unsigned int idx;
+    HMONITOR monitor;
+};
+
+BOOL CALLBACK enum_monitor_proc(HMONITOR monitor, HDC hdc, LPRECT pRect, LPARAM dwData) {
+    monitor_info_t *pMonitor = (monitor_info_t *)dwData;
+    if (--pMonitor->idx == 0) {
+        pMonitor->monitor = monitor;
+        return FALSE;
+    }
+    return TRUE;
 }
 #endif
 
-void Capture_screen(PA_PluginParameters params) {
+static void Capture_screen(PA_PluginParameters params) {
     
 #if VERSIONMAC
     getWindowImage(kCGNullWindowID, kCGWindowListOptionOnScreenOnly, params);
 #else
-    getWindowImage(GetDesktopWindow(), params);
+
+    monitor_info_t monitor_info;
+
+
+    HMONITOR monitorRef;
+
+    monitor_info.idx = PA_GetLongParameter(params, 1);
+    monitor_info.monitor = NULL;
+
+    EnumDisplayMonitors(NULL, NULL, (MONITORENUMPROC)enum_monitor_proc, (LPARAM)&monitor_info);
+
+    if (monitor_info.monitor == NULL) {
+        monitorRef = ::MonitorFromPoint({ 0,0 }, MONITOR_DEFAULTTOPRIMARY);
+    }else{
+        monitorRef = monitor_info.monitor;
+    }
+
+    getWindowImage(monitorRef, params);
 #endif
 
 }
 
-void Capture_window(PA_PluginParameters params)
+static void Capture_window(PA_PluginParameters params)
 {
     PA_long32 arg1 = PA_GetLongParameter(params, 1);
     
 #if VERSIONMAC
     CGWindowID winId = getWindowId(arg1);
-    if(winId != kCGNullWindowID)
+    if(winId != kCGNullWindowID){
         getWindowImage(winId, kCGWindowListOptionIncludingWindow, params);
+    }
 #else
-    HWND windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
-    getWindowImage(windowRef, params);
+
+    HWND windowRef = reinterpret_cast<HWND>(PA_GetMainWindowHWND());
+
+    if (!windowRef) {
+        windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
+    }
+
+    getWindowImage(windowRef, params, true);
 #endif
 
 }
+
+#if VERSIONWIN
+
+
+#pragma comment(lib, "windowsapp.lib")
+
+using namespace winrt;
+using namespace winrt::Windows::Foundation;
+using namespace winrt::Windows::System;
+using namespace winrt::Windows::Graphics;
+using namespace winrt::Windows::Graphics::DirectX;
+using namespace winrt::Windows::Graphics::DirectX::Direct3D11;
+using namespace winrt::Windows::Graphics::Capture;
+
+class GraphicsCapture
+{
+public:
+    using Callback = std::function<void(ID3D11Texture2D*, int w, int h)>;
+
+    GraphicsCapture();
+    ~GraphicsCapture();
+    bool start(HWND hwnd, bool free_threaded, const Callback& callback);
+    bool start(HMONITOR hmon, bool free_threaded, const Callback& callback);
+    void stop();
+
+private:
+    template<class CreateCaptureItem>
+    bool startImpl(bool free_threaded, const Callback& callback, const CreateCaptureItem& cci);
+
+    void onFrameArrived(
+        winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender,
+        winrt::Windows::Foundation::IInspectable const& args);
+
+private:
+    com_ptr<ID3D11Device> m_device;
+    com_ptr<ID3D11DeviceContext> m_context;
+
+    IDirect3DDevice m_device_rt{ nullptr };
+    Direct3D11CaptureFramePool m_frame_pool{ nullptr };
+    GraphicsCaptureItem m_capture_item{ nullptr };
+    GraphicsCaptureSession m_capture_session{ nullptr };
+    Direct3D11CaptureFramePool::FrameArrived_revoker m_frame_arrived;
+
+    Callback m_callback;
+};
+
+GraphicsCapture::GraphicsCapture()
+{
+    HRESULT hr = 
+
+    D3D11CreateDevice(nullptr, 
+        D3D_DRIVER_TYPE_HARDWARE,
+        nullptr,
+        D3D11_CREATE_DEVICE_BGRA_SUPPORT, 
+        nullptr, 0, 
+        D3D11_SDK_VERSION, m_device.put(), nullptr, 
+        nullptr);
+    
+    if (m_device) {
+        m_device->GetImmediateContext(m_context.put());
+    }
+    
+    auto dxgi = m_device.as<IDXGIDevice>();
+    com_ptr<::IInspectable> device_rt;
+    ::CreateDirect3D11DeviceFromDXGIDevice(dxgi.get(), device_rt.put());
+    m_device_rt = device_rt.as<IDirect3DDevice>();
+}
+
+GraphicsCapture::~GraphicsCapture()
+{
+    stop();
+}
+
+void GraphicsCapture::stop()
+{
+    m_frame_arrived.revoke();
+    m_capture_session = nullptr;
+    if (m_frame_pool) {
+        m_frame_pool.Close();
+        m_frame_pool = nullptr;
+    }
+    m_capture_item = nullptr;
+    m_callback = {};
+}
+
+template<class CreateCaptureItem>
+bool GraphicsCapture::startImpl(bool free_threaded, const Callback& callback, const CreateCaptureItem& cci)
+{
+    stop();
+    m_callback = callback;
+
+    // create capture item
+    auto factory = get_activation_factory<GraphicsCaptureItem>();
+    auto interop = factory.as<IGraphicsCaptureItemInterop>();
+    cci(interop);
+
+    if (m_capture_item) {
+        // create frame pool
+        auto size = m_capture_item.Size();
+        if (free_threaded)
+            m_frame_pool = Direct3D11CaptureFramePool::CreateFreeThreaded(m_device_rt, DirectXPixelFormat::B8G8R8A8UIntNormalized, 1, size);
+        else
+            m_frame_pool = Direct3D11CaptureFramePool::Create(m_device_rt, DirectXPixelFormat::B8G8R8A8UIntNormalized, 1, size);
+        m_frame_arrived = m_frame_pool.FrameArrived(auto_revoke, { this, &GraphicsCapture::onFrameArrived });
+
+        // capture start
+        m_capture_session = m_frame_pool.CreateCaptureSession(m_capture_item);
+        m_capture_session.StartCapture();
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+bool GraphicsCapture::start(HWND hwnd, bool free_threaded, const Callback& callback)
+{
+    return startImpl(free_threaded, callback, [&](auto interop) {
+        interop->CreateForWindow(hwnd, guid_of<ABI::Windows::Graphics::Capture::IGraphicsCaptureItem>(), put_abi(m_capture_item));
+        });
+
+}
+
+bool GraphicsCapture::start(HMONITOR hmon, bool free_threaded, const Callback& callback)
+{
+    return startImpl(free_threaded, callback, [&](auto interop) {
+        interop->CreateForMonitor(hmon, guid_of<ABI::Windows::Graphics::Capture::IGraphicsCaptureItem>(), put_abi(m_capture_item));
+        });
+}
+
+void GraphicsCapture::onFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender, winrt::Windows::Foundation::IInspectable const& args)
+{
+    auto frame = sender.TryGetNextFrame();
+    auto size = frame.ContentSize();
+
+    com_ptr<ID3D11Texture2D> surface;
+    frame.Surface().as<::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>()->GetInterface(guid_of<ID3D11Texture2D>(), surface.put_void());
+    m_callback(surface.get(), size.Width, size.Height);
+}
+
+static bool ReadTexture(ID3D11Texture2D* tex, int width, int height, const std::function<void(void*, int)>& callback)
+{
+    com_ptr<ID3D11Device> device;
+    com_ptr<ID3D11DeviceContext> ctx;
+    tex->GetDevice(device.put());
+    device->GetImmediateContext(ctx.put());
+
+    // create query
+    com_ptr<ID3D11Query> query_event;
+    {
+        D3D11_QUERY_DESC qdesc = { D3D11_QUERY_EVENT , 0 };
+        device->CreateQuery(&qdesc, query_event.put());
+    }
+
+    // create staging texture
+    com_ptr<ID3D11Texture2D> staging;
+    {
+        D3D11_TEXTURE2D_DESC tmp;
+        tex->GetDesc(&tmp);
+        D3D11_TEXTURE2D_DESC desc{ (UINT)width, (UINT)height, 1, 1, tmp.Format, { 1, 0 }, D3D11_USAGE_STAGING, 0, D3D11_CPU_ACCESS_READ, 0 };
+        device->CreateTexture2D(&desc, nullptr, staging.put());
+    }
+
+    // dispatch copy
+    {
+        D3D11_BOX box{};
+        box.right = width;
+        box.bottom = height;
+        box.back = 1;
+        ctx->CopySubresourceRegion(staging.get(), 0, 0, 0, 0, tex, 0, &box);
+        ctx->End(query_event.get());
+        ctx->Flush();
+    }
+
+    // wait for copy to complete
+    int wait_count = 0;
+    while (ctx->GetData(query_event.get(), nullptr, 0, 0) == S_FALSE) {
+        ++wait_count; // just for debug
+    }
+
+    // map
+    D3D11_MAPPED_SUBRESOURCE mapped{};
+    if (SUCCEEDED(ctx->Map(staging.get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+        D3D11_TEXTURE2D_DESC desc{};
+        staging->GetDesc(&desc);
+
+        callback(mapped.pData, mapped.RowPitch);
+        ctx->Unmap(staging.get(), 0);
+        return true;
+    }
+    return false;
+}
+
+static void getWindowImage(HANDLE target, PA_PluginParameters params, bool isWindow)
+{
+    
+    GraphicsCapture capture;
+    
+    bool arrived = false;
+
+    auto callback = [&](ID3D11Texture2D* surface, int w, int h) {
+
+        ReadTexture(surface, w, h, [&](void* data, int stride) {
+
+        bool flip_y = false;
+        std::vector<byte> buf(w * h * 4);
+        int dst_stride = w * 4;
+        int src_stride = stride;
+
+        auto src = (const byte*)data;
+        auto dst = (byte*)buf.data();
+        if (flip_y) {
+            for (int i = 0; i < h; ++i) {
+                auto s = src + (src_stride * (h - i - 1));
+                auto d = dst + (dst_stride * i);
+                for (int j = 0; j < w; ++j) {
+                    d[0] = s[2];
+                    d[1] = s[1];
+                    d[2] = s[0];
+                    d[3] = s[3];
+                    s += 4;
+                    d += 4;
+                }
+            }
+        }
+        else {
+            for (int i = 0; i < h; ++i) {
+                auto s = src + (src_stride * i);
+                auto d = dst + (dst_stride * i);
+                for (int j = 0; j < w; ++j) {
+                    d[0] = s[2];
+                    d[1] = s[1];
+                    d[2] = s[0];
+                    d[3] = s[3];
+                    s += 4;
+                    d += 4;
+                }
+            }
+        }
+
+        int out_len = 0;
+
+        unsigned char * out_buf = stbi_write_png_to_mem(buf.data(), dst_stride, w, h, 4, &out_len);
+
+        if (out_len != 0) {
+            PA_Picture p = PA_CreatePicture((void *)out_buf, out_len);
+            PA_ReturnPicture(params, p);
+        }
+
+        });
+
+
+        arrived = true;
+    };
+    
+    if (isWindow) {
+        HWND window = (HWND)target;
+        if (capture.start(window, false, callback)) {
+            MSG msg;
+            while (!arrived) {
+                PA_YieldAbsolute();
+                ::GetMessage(&msg, nullptr, 0, 0);
+                ::TranslateMessage(&msg);
+                ::DispatchMessage(&msg);
+            }
+            capture.stop();
+        }
+    }
+    else {
+        HMONITOR monitor = (HMONITOR)target;
+        if (capture.start(monitor, false, callback)) {
+            MSG msg;
+            while (!arrived) {
+                PA_YieldAbsolute();
+                ::GetMessage(&msg, nullptr, 0, 0);
+                ::TranslateMessage(&msg);
+                ::DispatchMessage(&msg);
+            }
+            capture.stop();
+        }
+    }
+}
+#endif

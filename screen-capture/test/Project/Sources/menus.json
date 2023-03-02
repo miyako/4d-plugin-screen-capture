@@ -1,4 +1,4 @@
-﻿{
+{
 	"bars": [
 		{
 			"id": 1,
@@ -21,6 +21,10 @@
 			"link": 32001,
 			"title": ":xliff:CommonMenuFile",
 			"items": [
+				{
+					"title": "TEST",
+					"method": "TEST_window"
+				},
 				{
 					"title": ":xliff:CommonMenuItemQuit",
 					"shortcutAccel": true,

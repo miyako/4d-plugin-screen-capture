@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?><preferences stamp="2">
+<?xml version="1.0" encoding="UTF-8"?><preferences stamp="3">
 	<com.4d>
 		<database>
 			<cache adaptative="false" flush_buffer_delay="20s" size_fixed="200"/>
@@ -18,5 +18,8 @@
 			<typage default_for_button="2" default_for_numeric="1"/>
 			<options error_file="true" symbol_file="true"/>
 		</compiler>
+		<interface>
+			<user sdi_application="true"/>
+		</interface>
 	</com.4d>
 </preferences>
