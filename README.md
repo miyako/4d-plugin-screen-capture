@@ -24,6 +24,14 @@ On Windows, you must install **Graphic Tools** in
 
 in order to call [D3D11CreateDevice](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdevice) with the  `D3D11_CREATE_DEVICE_DEBUG` flag. This is not mandatory for using the plugin.
 
+#### Mac
+
+[CGWindowListCreateImage](https://developer.apple.com/documentation/coregraphics/1454852-cgwindowlistcreateimage?preferredLanguage=occ) is used with `CGRectNull` to capture a window. 
+
+The shadow is ignored (`kCGWindowImageBoundsIgnoreFraming`).
+
+For the screen, the `kCGNullWindowID` and `kCGWindowListOptionOnScreenOnly` is used.
+
 ## Syntax
 
 ```4d
