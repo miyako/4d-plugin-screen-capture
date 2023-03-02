@@ -35,7 +35,7 @@ For the screen, the `kCGNullWindowID` and `kCGWindowListOptionOnScreenOnly` is u
 ## Syntax
 
 ```4d
-image:=Capture screen
+image:=Capture screen ({monitor})
 image:=Capture window (window)
 ```
 
@@ -43,3 +43,4 @@ Parameter|Type|Description
 ------------|------------|----
 image|PICTURE|Captured image
 window|LONGINT|Window reference
+monitor|LONGINT|Monitor reference (Windows only)
