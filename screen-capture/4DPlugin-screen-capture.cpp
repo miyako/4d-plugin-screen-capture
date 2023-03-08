@@ -116,6 +116,75 @@ BOOL CALLBACK enum_monitor_proc(HMONITOR monitor, HDC hdc, LPRECT pRect, LPARAM 
     }
     return TRUE;
 }
+
+static void bitmapToPicture(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, PA_PluginParameters params)
+{
+    if (hbmWindow)
+    {
+        BITMAPINFO bmpInfo;
+        ZeroMemory(&bmpInfo, sizeof(BITMAPINFO));
+        bmpInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        GetDIBits(hdcWindow, hbmWindow, 0, 0, NULL, &bmpInfo, DIB_RGB_COLORS);
+
+        BITMAPINFOHEADER bi;
+        bi.biSize = sizeof(BITMAPINFOHEADER);
+        bi.biWidth = w;
+        bi.biHeight = h;
+        bi.biPlanes = 1;
+        bi.biBitCount = 32;
+        bi.biCompression = BI_RGB;
+        bi.biSizeImage = 0;
+        bi.biXPelsPerMeter = 0;
+        bi.biYPelsPerMeter = 0;
+        bi.biClrUsed = 0;
+        bi.biClrImportant = 0;
+
+        bi.biSizeImage = bmpInfo.bmiHeader.biSizeImage;
+
+        HANDLE hDIB = GlobalAlloc(GHND, bi.biSizeImage + sizeof(BITMAPINFOHEADER));
+
+        if (hDIB)
+        {
+            LPBITMAPINFOHEADER lpbi = (LPBITMAPINFOHEADER)GlobalLock(hDIB);
+
+            if (lpbi)
+            {
+
+                *lpbi = bi;
+
+                std::vector<char> bits(bi.biSizeImage);
+                GetDIBits(hdcWindow, hbmWindow, 0, bi.biHeight, &bits[0], (LPBITMAPINFO)lpbi, DIB_RGB_COLORS);
+
+                size_t bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + bi.biSizeImage;
+
+                BITMAPFILEHEADER        bmfHeader;
+
+                bmfHeader.bfType = 0x4D42; //BM
+                bmfHeader.bfSize = bfSize;
+                bmfHeader.bfReserved1 = 0;
+                bmfHeader.bfReserved2 = 0;
+                bmfHeader.bfOffBits = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
+
+                std::vector<char> buf(bfSize);
+
+                //copy the file header
+                memcpy(&buf[0], &bmfHeader, sizeof(BITMAPFILEHEADER));
+                //copy the info header and bits
+                memcpy(&buf[0] + sizeof(BITMAPFILEHEADER), lpbi, sizeof(BITMAPINFOHEADER));
+                //copy the bits
+                memcpy(&buf[0] + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER), &bits[0], lpbi->biSizeImage);
+
+                PA_Picture p = PA_CreatePicture((void*)&buf[0], bfSize);
+                PA_ReturnPicture(params, p);
+
+                GlobalUnlock(hDIB);
+            }//GlobalLock
+            GlobalFree(hDIB);
+        }//GlobalAlloc
+
+}//hbmWindow
+
+}
 #endif
 
 static void Capture_screen(PA_PluginParameters params) {
@@ -159,7 +228,38 @@ static void Capture_window(PA_PluginParameters params)
     HWND windowRef = reinterpret_cast<HWND>(PA_GetMainWindowHWND());
 
     if (!windowRef) {
+        //SDI
         windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
+    }else{
+        windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
+        RECT rect{};
+        ::GetWindowRect(windowRef, &rect);
+        int width = rect.right - rect.left;
+        int height = rect.bottom - rect.top;
+        
+        BITMAPINFO info{};
+        info.bmiHeader.biSize = sizeof(info.bmiHeader);
+        info.bmiHeader.biWidth = width;
+        info.bmiHeader.biHeight = height;
+        info.bmiHeader.biPlanes = 1;
+        info.bmiHeader.biBitCount = 32;
+        info.bmiHeader.biCompression = BI_RGB;
+        info.bmiHeader.biSizeImage = width * height * 4;
+
+        bool ret = false;
+        HDC hscreen = ::GetDC(windowRef);
+        HDC hdc = ::CreateCompatibleDC(hscreen);
+        void* data = nullptr;
+        if (HBITMAP hbmp = ::CreateDIBSection(hdc, &info, DIB_RGB_COLORS, &data, NULL, NULL)) {
+            ::SelectObject(hdc, hbmp);
+            if (::PrintWindow(windowRef, hdc, PW_RENDERFULLCONTENT)) {
+                bitmapToPicture(hbmp, hscreen, width, height, params);
+            }
+            ::DeleteObject(hbmp);
+            ret = true;
+        }
+        ::DeleteDC(hdc);
+        ::ReleaseDC(windowRef, hscreen);
     }
 
     getWindowImage(windowRef, params, true);
@@ -416,7 +516,6 @@ static void getWindowImage(HANDLE target, PA_PluginParameters params, bool isWin
         }
 
         });
-
 
         arrived = true;
     };
