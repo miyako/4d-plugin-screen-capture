@@ -32,15 +32,6 @@ The shadow is ignored (`kCGWindowImageBoundsIgnoreFraming`).
 
 For the screen, the `kCGNullWindowID` and `kCGWindowListOptionOnScreenOnly` is used.
 
-## Syntax
+### Syntax
 
-```4d
-image:=Capture screen ({monitor})
-image:=Capture window (window)
-```
-
-Parameter|Type|Description
-------------|------------|----
-image|PICTURE|Captured image
-window|LONGINT|Window reference
-monitor|LONGINT|Monitor index (Windows only)
+[miyako.github.io](https://miyako.github.io/2023/03/08/4d-plugin-screen-capture.html)
