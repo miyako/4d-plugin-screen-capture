@@ -12,7 +12,7 @@ Screen capture the desktop or a specified window.
 
 The web area is using hardware acceleration, a performance multiplier for rendering. It is not possible to sample pixels using the class `BitBlt` API. `BitBlt` will return a black region where the GPU projects its output. It is necessary to capture the GPU representation of the window and locally convert it to bitmap.
 
-On Windows, it is not possible to capture a child window of the MDI using this command. The entire MDI is captured instead.
+On Windows, it is not possible to capture a child window of the MDI using this command. 
 
 You can only specify a window reference in **SDI mode**. 
 
