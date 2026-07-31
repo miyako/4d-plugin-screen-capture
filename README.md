@@ -3,6 +3,8 @@
 [![license](https://img.shields.io/github/license/miyako/4d-plugin-screen-capture)](LICENSE)
 ![downloads](https://img.shields.io/github/downloads/miyako/4d-plugin-screen-capture/total)
 
+# 4d-plugin-screen-capture
+
 A 4D plugin that adds two commands for capturing screenshots directly from 4D code, without shelling out to the OS or relying on third-party utilities. Both commands return a native 4D `Picture` that you can display, store in a field, paste to the pasteboard, or write to disk using 4D's standard picture commands.
 
 | Command | Returns | Purpose |
