@@ -110,6 +110,12 @@ struct monitor_info_t
 
 BOOL CALLBACK enum_monitor_proc(HMONITOR monitor, HDC hdc, LPRECT pRect, LPARAM dwData) {
     monitor_info_t *pMonitor = (monitor_info_t *)dwData;
+    // Guard against idx == 0 (or a bogus/negative value coerced to 0): pMonitor->idx
+    // is unsigned, so decrementing 0 would wrap to UINT_MAX and never match a real
+    // monitor, silently falling back to "not found" instead of failing predictably.
+    if (pMonitor->idx == 0) {
+        return FALSE;
+    }
     if (--pMonitor->idx == 0) {
         pMonitor->monitor = monitor;
         return FALSE;
@@ -124,7 +130,13 @@ static void bitmapToPicture(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, PA_P
         BITMAPINFO bmpInfo;
         ZeroMemory(&bmpInfo, sizeof(BITMAPINFO));
         bmpInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        GetDIBits(hdcWindow, hbmWindow, 0, 0, NULL, &bmpInfo, DIB_RGB_COLORS);
+        if (!GetDIBits(hdcWindow, hbmWindow, 0, 0, NULL, &bmpInfo, DIB_RGB_COLORS) ||
+            bmpInfo.bmiHeader.biSizeImage == 0)
+        {
+            // Query failed, or the bitmap has no pixel data to report -
+            // bail out rather than proceeding with a zero-size buffer.
+            return;
+        }
 
         BITMAPINFOHEADER bi;
         bi.biSize = sizeof(BITMAPINFOHEADER);
@@ -153,29 +165,31 @@ static void bitmapToPicture(HBITMAP hbmWindow, HDC hdcWindow, int w, int h, PA_P
                 *lpbi = bi;
 
                 std::vector<char> bits(bi.biSizeImage);
-                GetDIBits(hdcWindow, hbmWindow, 0, bi.biHeight, &bits[0], (LPBITMAPINFO)lpbi, DIB_RGB_COLORS);
+                if (GetDIBits(hdcWindow, hbmWindow, 0, bi.biHeight, &bits[0], (LPBITMAPINFO)lpbi, DIB_RGB_COLORS) != 0)
+                {
+                    size_t bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + bi.biSizeImage;
 
-                size_t bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + bi.biSizeImage;
+                    BITMAPFILEHEADER        bmfHeader;
 
-                BITMAPFILEHEADER        bmfHeader;
+                    bmfHeader.bfType = 0x4D42; //BM
+                    bmfHeader.bfSize = bfSize;
+                    bmfHeader.bfReserved1 = 0;
+                    bmfHeader.bfReserved2 = 0;
+                    bmfHeader.bfOffBits = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
 
-                bmfHeader.bfType = 0x4D42; //BM
-                bmfHeader.bfSize = bfSize;
-                bmfHeader.bfReserved1 = 0;
-                bmfHeader.bfReserved2 = 0;
-                bmfHeader.bfOffBits = (DWORD)sizeof(BITMAPFILEHEADER) + (DWORD)sizeof(BITMAPINFOHEADER);
+                    std::vector<char> buf(bfSize);
 
-                std::vector<char> buf(bfSize);
+                    //copy the file header
+                    memcpy(&buf[0], &bmfHeader, sizeof(BITMAPFILEHEADER));
+                    //copy the info header and bits
+                    memcpy(&buf[0] + sizeof(BITMAPFILEHEADER), lpbi, sizeof(BITMAPINFOHEADER));
+                    //copy the bits
+                    memcpy(&buf[0] + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER), &bits[0], lpbi->biSizeImage);
 
-                //copy the file header
-                memcpy(&buf[0], &bmfHeader, sizeof(BITMAPFILEHEADER));
-                //copy the info header and bits
-                memcpy(&buf[0] + sizeof(BITMAPFILEHEADER), lpbi, sizeof(BITMAPINFOHEADER));
-                //copy the bits
-                memcpy(&buf[0] + sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER), &bits[0], lpbi->biSizeImage);
-
-                PA_Picture p = PA_CreatePicture((void*)&buf[0], bfSize);
-                PA_ReturnPicture(params, p);
+                    PA_Picture p = PA_CreatePicture((void*)&buf[0], bfSize);
+                    PA_ReturnPicture(params, p);
+                }
+                // else: GetDIBits failed to retrieve pixel data - nothing to return.
 
                 GlobalUnlock(hDIB);
             }//GlobalLock
@@ -225,44 +239,16 @@ static void Capture_window(PA_PluginParameters params)
     }
 #else
 
-    HWND windowRef = reinterpret_cast<HWND>(PA_GetMainWindowHWND());
+    // Note: previously this function ran a legacy GDI PrintWindow-based capture
+    // (see bitmapToPicture) AND the WinRT Graphics Capture path below unconditionally
+    // on every call, calling PA_ReturnPicture(params, ...) twice per invocation. That
+    // wasted a full capture's worth of work and left it undefined which of the two
+    // pictures 4D actually kept. The WinRT path is the only one used now.
+    HWND windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
 
-    if (!windowRef) {
-        //SDI
-        windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
-    }else{
-        windowRef = reinterpret_cast<HWND>(PA_GetHWND(reinterpret_cast<PA_WindowRef>(arg1)));
-        RECT rect{};
-        ::GetWindowRect(windowRef, &rect);
-        int width = rect.right - rect.left;
-        int height = rect.bottom - rect.top;
-        
-        BITMAPINFO info{};
-        info.bmiHeader.biSize = sizeof(info.bmiHeader);
-        info.bmiHeader.biWidth = width;
-        info.bmiHeader.biHeight = height;
-        info.bmiHeader.biPlanes = 1;
-        info.bmiHeader.biBitCount = 32;
-        info.bmiHeader.biCompression = BI_RGB;
-        info.bmiHeader.biSizeImage = width * height * 4;
-
-        bool ret = false;
-        HDC hscreen = ::GetDC(windowRef);
-        HDC hdc = ::CreateCompatibleDC(hscreen);
-        void* data = nullptr;
-        if (HBITMAP hbmp = ::CreateDIBSection(hdc, &info, DIB_RGB_COLORS, &data, NULL, NULL)) {
-            ::SelectObject(hdc, hbmp);
-            if (::PrintWindow(windowRef, hdc, PW_RENDERFULLCONTENT)) {
-                bitmapToPicture(hbmp, hscreen, width, height, params);
-            }
-            ::DeleteObject(hbmp);
-            ret = true;
-        }
-        ::DeleteDC(hdc);
-        ::ReleaseDC(windowRef, hscreen);
+    if (windowRef) {
+        getWindowImage(windowRef, params, true);
     }
-
-    getWindowImage(windowRef, params, true);
 #endif
 
 }
@@ -310,28 +296,47 @@ private:
     Direct3D11CaptureFramePool::FrameArrived_revoker m_frame_arrived;
 
     Callback m_callback;
+    bool m_valid{ false };
+
+public:
+    // True only if a D3D11 device and its WinRT interop wrapper were created
+    // successfully. Callers should check this (or rely on start() returning
+    // false) before relying on a capture actually being possible.
+    bool isValid() const { return m_valid; }
 };
 
 GraphicsCapture::GraphicsCapture()
 {
-    HRESULT hr = 
-
-    D3D11CreateDevice(nullptr, 
+    HRESULT hr = D3D11CreateDevice(nullptr,
         D3D_DRIVER_TYPE_HARDWARE,
         nullptr,
         D3D11_CREATE_DEVICE_BGRA_SUPPORT, 
         nullptr, 0, 
         D3D11_SDK_VERSION, m_device.put(), nullptr, 
         nullptr);
-    
-    if (m_device) {
-        m_device->GetImmediateContext(m_context.put());
+
+    if (FAILED(hr) || !m_device) {
+        // No hardware D3D11 device available (no adapter, remote session, etc.).
+        // Leave m_valid false so start()/startImpl refuse to proceed instead of
+        // dereferencing a null device further down the line.
+        return;
     }
-    
-    auto dxgi = m_device.as<IDXGIDevice>();
+
+    m_device->GetImmediateContext(m_context.put());
+
+    auto dxgi = m_device.try_as<IDXGIDevice>();
+    if (!dxgi) {
+        return;
+    }
+
     com_ptr<::IInspectable> device_rt;
-    ::CreateDirect3D11DeviceFromDXGIDevice(dxgi.get(), device_rt.put());
-    m_device_rt = device_rt.as<IDirect3DDevice>();
+    hr = ::CreateDirect3D11DeviceFromDXGIDevice(dxgi.get(), device_rt.put());
+    if (FAILED(hr) || !device_rt) {
+        return;
+    }
+
+    m_device_rt = device_rt.try_as<IDirect3DDevice>();
+    m_valid = (m_device_rt != nullptr);
 }
 
 GraphicsCapture::~GraphicsCapture()
@@ -354,6 +359,12 @@ void GraphicsCapture::stop()
 template<class CreateCaptureItem>
 bool GraphicsCapture::startImpl(bool free_threaded, const Callback& callback, const CreateCaptureItem& cci)
 {
+    if (!m_valid) {
+        // D3D11 device / WinRT interop device failed to initialize in the
+        // constructor - there is nothing usable to capture into.
+        return false;
+    }
+
     stop();
     m_callback = callback;
 
@@ -399,10 +410,22 @@ bool GraphicsCapture::start(HMONITOR hmon, bool free_threaded, const Callback& c
 void GraphicsCapture::onFrameArrived(winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender, winrt::Windows::Foundation::IInspectable const& args)
 {
     auto frame = sender.TryGetNextFrame();
+    if (!frame) {
+        // No frame available yet (e.g. pool momentarily empty) - just wait for
+        // the next FrameArrived event rather than dereferencing a null frame.
+        return;
+    }
     auto size = frame.ContentSize();
 
     com_ptr<ID3D11Texture2D> surface;
-    frame.Surface().as<::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>()->GetInterface(guid_of<ID3D11Texture2D>(), surface.put_void());
+    auto access = frame.Surface().try_as<::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
+    if (!access) {
+        return;
+    }
+    HRESULT hr = access->GetInterface(guid_of<ID3D11Texture2D>(), surface.put_void());
+    if (FAILED(hr) || !surface) {
+        return;
+    }
     m_callback(surface.get(), size.Width, size.Height);
 }
 
@@ -440,10 +463,20 @@ static bool ReadTexture(ID3D11Texture2D* tex, int width, int height, const std::
         ctx->Flush();
     }
 
-    // wait for copy to complete
-    int wait_count = 0;
-    while (ctx->GetData(query_event.get(), nullptr, 0, 0) == S_FALSE) {
-        ++wait_count; // just for debug
+    // Wait for the GPU copy to complete. Poll with a yield instead of a tight
+    // spin (which pegs a full CPU core), and bound the wait so a stuck/hung
+    // GPU query can't hang this call forever.
+    const DWORD kMaxWaitMs = 5000;
+    ULONGLONG waitStart = GetTickCount64();
+    HRESULT hr;
+    while ((hr = ctx->GetData(query_event.get(), nullptr, 0, 0)) == S_FALSE) {
+        if (GetTickCount64() - waitStart >= kMaxWaitMs) {
+            return false; // timed out waiting for the GPU
+        }
+        ::SwitchToThread();
+    }
+    if (FAILED(hr)) {
+        return false;
     }
 
     // map
@@ -457,6 +490,34 @@ static bool ReadTexture(ID3D11Texture2D* tex, int width, int height, const std::
         return true;
     }
     return false;
+}
+
+// Pumps this thread's message queue until `arrived` becomes true or `timeout_ms`
+// elapses. Unlike a bare GetMessage() loop, this never blocks indefinitely: if the
+// capture callback never fires (window closed/minimized mid-capture, access denied,
+// no frame ever produced), this returns false instead of hanging the plugin call -
+// and therefore 4D - forever.
+static bool PumpMessagesUntil(const bool& arrived, DWORD timeout_ms)
+{
+    ULONGLONG start = ::GetTickCount64();
+    MSG msg;
+    while (!arrived) {
+        ULONGLONG elapsed = ::GetTickCount64() - start;
+        if (elapsed >= timeout_ms) {
+            return false;
+        }
+        DWORD waitResult = ::MsgWaitForMultipleObjects(
+            0, nullptr, FALSE, (DWORD)(timeout_ms - elapsed), QS_ALLINPUT);
+        if (waitResult == WAIT_FAILED) {
+            return false;
+        }
+        while (::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+            ::TranslateMessage(&msg);
+            ::DispatchMessage(&msg);
+        }
+        PA_YieldAbsolute();
+    }
+    return true;
 }
 
 static void getWindowImage(HANDLE target, PA_PluginParameters params, bool isWindow)
@@ -510,9 +571,15 @@ static void getWindowImage(HANDLE target, PA_PluginParameters params, bool isWin
 
         unsigned char * out_buf = stbi_write_png_to_mem(buf.data(), dst_stride, w, h, 4, &out_len);
 
-        if (out_len != 0) {
-            PA_Picture p = PA_CreatePicture((void *)out_buf, out_len);
-            PA_ReturnPicture(params, p);
+        if (out_buf) {
+            if (out_len != 0) {
+                // PA_CreatePicture copies the encoded bytes into 4D's own picture
+                // representation, so out_buf's lifetime is ours to manage - free it
+                // below regardless of branch, rather than leaking it on every capture.
+                PA_Picture p = PA_CreatePicture((void *)out_buf, out_len);
+                PA_ReturnPicture(params, p);
+            }
+            free(out_buf);
         }
 
         });
@@ -520,29 +587,22 @@ static void getWindowImage(HANDLE target, PA_PluginParameters params, bool isWin
         arrived = true;
     };
     
+    // Maximum time to wait for a single frame to arrive before giving up. Chosen
+    // generously (a capture is normally near-instant) while still guaranteeing
+    // the plugin call - and 4D along with it - can never hang indefinitely.
+    const DWORD kCaptureTimeoutMs = 5000;
+
     if (isWindow) {
         HWND window = (HWND)target;
         if (capture.start(window, false, callback)) {
-            MSG msg;
-            while (!arrived) {
-                PA_YieldAbsolute();
-                ::GetMessage(&msg, nullptr, 0, 0);
-                ::TranslateMessage(&msg);
-                ::DispatchMessage(&msg);
-            }
+            PumpMessagesUntil(arrived, kCaptureTimeoutMs);
             capture.stop();
         }
     }
     else {
         HMONITOR monitor = (HMONITOR)target;
         if (capture.start(monitor, false, callback)) {
-            MSG msg;
-            while (!arrived) {
-                PA_YieldAbsolute();
-                ::GetMessage(&msg, nullptr, 0, 0);
-                ::TranslateMessage(&msg);
-                ::DispatchMessage(&msg);
-            }
+            PumpMessagesUntil(arrived, kCaptureTimeoutMs);
             capture.stop();
         }
     }
