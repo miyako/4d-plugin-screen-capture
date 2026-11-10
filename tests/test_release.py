@@ -394,6 +394,32 @@ class PublicationCLITests(GitFixture):
             self.assertEqual(self.calls(), [])
             self.git("update-index", "--no-" + flag, "--", self.generated[0])
 
+    def test_real_git_fsmonitor_H_h_oracle_source_preflight_and_generated_final_before_api(self):
+        self.assertEqual(self.command("preflight").returncode, 0)
+        self.reset_api()
+        hook = self.local / ".git/hooks/fixture-fsmonitor"
+        hook.parent.mkdir(exist_ok=True)
+        hook.write_text("#!/bin/sh\nprintf 'fixture-token\\0'\n")
+        hook.chmod(0o755)
+        for phase, relative in (("preflight", "native.cpp"),
+                                ("publish", self.generated[0])):
+            if phase == "publish":
+                expected = self.build()
+            self.git("config", "core.fsmonitor", str(hook))
+            self.git("update-index", "--fsmonitor-valid", "--", relative)
+            self.assertEqual(self.git("ls-files", "-v", "--", relative), "H " + relative)
+            self.assertEqual(self.git("ls-files", "-f", "--", relative), "h " + relative)
+            result = self.command(phase)
+            self.assertNotEqual(result.returncode, 0, result.stdout)
+            self.assertIn("Hidden index/stat flags", result.stderr)
+            self.assertEqual(self.calls(), [])
+            self.git("config", "--unset", "core.fsmonitor")
+            self.git("update-index", "--no-fsmonitor")
+        result = self.command("publish")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for relative, raw in expected.items():
+            self.assertEqual((self.local / relative).read_bytes(), raw)
+
     def test_final_builtin_metadata_drift_missing_or_invalid_fails_before_api(self):
         self.build()
         for path in self.generated[1:3]:

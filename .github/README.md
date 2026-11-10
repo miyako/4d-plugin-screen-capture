@@ -73,6 +73,8 @@ Build inherits scoped `core.autocrlf=false` before every checkout without
 changing global Git configuration. On Windows only, regular worktree executable
 bits may differ when the raw blob is identical; selected/index modes, hidden
 flags, symlinks and reparse points remain strict.
+Both `git ls-files -v` and `-f` are checked: fsmonitor-valid can appear as `H`
+to `-v` while only `-f` exposes its lowercase `h` marker.
 
 Publication checks all release pages through the empty page, including drafts,
 the exact API tag ref and exact Git advertisement. Reads fail closed. It then
